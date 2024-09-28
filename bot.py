@@ -8,6 +8,9 @@ import telebot
 TOKEN = '7574930334:AAFwl7p2VRwXy0B0Sb3vCElQ8v3X4cm6slo'.strip()
 
 bot = telebot.TeleBot(TOKEN)
+cookies_dict = {}  # Global variable to store cookies
+waiting_for_cookies = True  # Track if bot is waiting for cookies anymore
+job_listings = []  # List to store job listings
 
 # Set up Selenium WebDriver for Safari
 service = Service()  # No path needed for Safari
@@ -29,16 +32,27 @@ def parse_cookies(cookie_str):
 def start(message):
     bot.reply_to(message, "Welcome! Please provide your cookies in this format: `PHPSESSID=value; sessionToken=value;`")
 
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda message: waiting_for_cookies)
 def set_cookies(message):
+    global cookies_dict, waiting_for_cookies
     try:
         cookies_dict = parse_cookies(message.text)
         bot.reply_to(message, "Cookies set successfully! Now fetching job listings.")
+        waiting_for_cookies = False  # Now not waiting for cookies anymore
         send_internshala_job_listings(message, cookies_dict)
     except ValueError as e:
         bot.reply_to(message, f"Error: {str(e)}")
 
-def fetch_internshala_jobs(cookies,limit=5):
+@bot.message_handler(func=lambda message: not waiting_for_cookies)
+def select_job(message):
+    job_number = message.text.strip()
+    try:
+        job_number = int(job_number)  # Convert input to an integer
+        apply_for_job(message, job_number)
+    except ValueError:
+        bot.reply_to(message, "Please select a valid job number.")
+
+def fetch_internshala_jobs(cookies, limit=5):
     url = "https://internshala.com/internships"
     driver.get(url)
 
@@ -48,7 +62,8 @@ def fetch_internshala_jobs(cookies,limit=5):
 
     driver.refresh()  # Refresh the page to load with the new cookies
 
-    job_listings = []
+    global job_listings  # Use the global job_listings list
+    job_listings = []  # Clear the previous listings
     try:
         # Wait until the job cards are loaded
         wait = WebDriverWait(driver, 10)
@@ -58,31 +73,19 @@ def fetch_internshala_jobs(cookies,limit=5):
             if index >= limit:
                 break
             try:
-                # Fetch details
+                # Fetch job details
                 title_element = job_card.find_element(By.CLASS_NAME, 'job-title-href')
                 title = title_element.text.strip()
-                print("Job Title found")
 
                 company_element = job_card.find_element(By.CLASS_NAME, 'company-name')
                 company = company_element.text.strip()
-                print("Company found")
 
-                # stipend_element = job_card.find_element(By.CLASS_NAME, 'desktop')
-                # stipend = stipend_element.text.strip()
-                
-
-                # experience_element = job_card.find_element(By.CSS_SELECTOR, 'div.detail-row-1 > div:nth-child(2) > span')
-                # experience = experience_element.text.strip()
-
-                # location_element = job_card.find_element(By.CSS_SELECTOR, 'div.detail-row-1 > p > span > a')
-                # location = location_element.text.strip()
+                job_link = job_card.find_element(By.CLASS_NAME, 'job-title-href').get_attribute('href')
 
                 job_info = {
                     "title": title,
                     "company": company,
-                    # "stipend":stipend,
-                    # "experience":experience,
-                    # "location":location
+                    "link": job_link
                 }
 
                 job_listings.append(job_info)
@@ -95,16 +98,44 @@ def fetch_internshala_jobs(cookies,limit=5):
     return job_listings
 
 def send_internshala_job_listings(message, cookies_dict):
-    limit=5
-    job_listings = fetch_internshala_jobs(cookies_dict,limit)
+    limit = 5
+    job_listings = fetch_internshala_jobs(cookies_dict, limit)
     
     if job_listings:
-        for job in job_listings:
-            bot.reply_to(message, str(job))
+        job_message = "Here are the job listings:\n"
+        for index, job in enumerate(job_listings):
+            job_message += f"{index + 1}. {job['title']} at {job['company']}\n"
+            job_message += f"Link: {job['link']}\n"
+        job_message += "Please select a job by number to apply."
+        bot.reply_to(message, job_message)
     else:
         bot.reply_to(message, "No jobs found. Please check your cookies or try again later.")
 
+def apply_for_job(message, job_number):
+    global job_listings  # Access the global job_listings list
+    job_number -= 1  # Adjusting for 0-based index
+
+    if job_number < 0 or job_number >= len(job_listings):
+        bot.reply_to(message, "Invalid job selection. Please select a valid job number.")
+        return
+
+    job_link = job_listings[job_number]['link']  # Access the link from job_listings
+
+    driver.get(job_link)  # Navigate to the job application page
+
+    try:
+        # Wait for the apply button and click it
+        wait = WebDriverWait(driver, 10)
+        apply_button = wait.until(EC.presence_of_element_located((By.ID, 'easy_apply_button')))
+        apply_button.click()  # Click on the apply button
+
+        # Optionally, add more code here to handle the application form if needed
+
+        bot.reply_to(message, "Application submitted successfully.")
+    except Exception as e:
+        bot.reply_to(message, f"Error applying for job: {str(e)}")
+
 bot.polling()
 
-# Driver.quit() is handled outside polling loop
+# Quit the driver after polling loop
 driver.quit()
