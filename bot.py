@@ -4,6 +4,7 @@ from selenium.webdriver.safari.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import telebot
+import os
 
 TOKEN = '7574930334:AAFwl7p2VRwXy0B0Sb3vCElQ8v3X4cm6slo'.strip()
 
@@ -24,13 +25,25 @@ def parse_cookies(cookie_str):
         for pair in pairs:
             key, value = pair.strip().split('=')
             cookies[key] = value
-    except Exception as e:
+    except Exception:
         raise ValueError("Invalid cookie format. Please provide cookies in the format: PHPSESSID=value; sessionToken=value;")
     return cookies
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Welcome! Please provide your cookies in this format: `PHPSESSID=value; sessionToken=value;`")
+    welcome_message = """
+    Welcome to the Job Find Application Bot! 🎉
+
+    Hi there! I'm here to simplify your job search and help you find the perfect opportunity. Whether you’re hunting for internships or full-time roles, I can assist you in applying on LinkedIn and Internshala with ease.
+
+    ✨ How it works:
+    1. Please provide your cookies in this format: `PHPSESSID=value; sessionToken=value;`
+    2. Pick a job from the list I will share to start your application.
+    3. Sit back and relax while I take care of the rest!
+
+    Let’s kick off your job search :)
+    """
+    bot.reply_to(message, welcome_message)
 
 @bot.message_handler(func=lambda message: waiting_for_cookies)
 def set_cookies(message):
@@ -135,7 +148,8 @@ def apply_for_job(message, job_number):
     except Exception as e:
         bot.reply_to(message, f"Error applying for job: {str(e)}")
 
-bot.polling()
-
-# Quit the driver after polling loop
-driver.quit()
+try:
+    bot.polling()
+finally:
+    # Quit the driver after polling loop
+    driver.quit()
