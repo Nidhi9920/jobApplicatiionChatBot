@@ -1,84 +1,110 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.safari.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import telebot
-import requests
-from bs4 import BeautifulSoup
 
 TOKEN = '7574930334:AAFwl7p2VRwXy0B0Sb3vCElQ8v3X4cm6slo'.strip()
 
 bot = telebot.TeleBot(TOKEN)
 
-# Store cookies in a global dictionary
-cookies_dict = {}
+# Set up Selenium WebDriver for Safari
+service = Service()  # No path needed for Safari
+driver = webdriver.Safari(service=service)
 
-# Function to parse cookies from user input
-def parse_cookies(cookies_input):
+# Function to parse cookies from the user's input
+def parse_cookies(cookie_str):
     cookies = {}
-    cookie_list = cookies_input.split(";")
-    for cookie in cookie_list:
-        if "=" in cookie:
-            key, value = cookie.strip().split("=", 1)
+    try:
+        pairs = cookie_str.split(';')
+        for pair in pairs:
+            key, value = pair.strip().split('=')
             cookies[key] = value
-        else:
-            raise ValueError("Each cookie must contain an '=' character.")
+    except Exception as e:
+        raise ValueError("Invalid cookie format. Please provide cookies in the format: PHPSESSID=value; sessionToken=value;")
     return cookies
 
-# Step 1: Start command to ask for cookies
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message, "Welcome! Please provide your cookies in this format: `PHPSESSID=value; sessionToken=value;`")
 
-# Step 2: Receive cookies input from the user
 @bot.message_handler(func=lambda message: True)
 def set_cookies(message):
-    global cookies_dict
     try:
         cookies_dict = parse_cookies(message.text)
         bot.reply_to(message, "Cookies set successfully! Now fetching job listings.")
-        send_internshala_job_listings(message)
+        send_internshala_job_listings(message, cookies_dict)
     except ValueError as e:
         bot.reply_to(message, f"Error: {str(e)}")
 
-# Step 3: Fetch job listings from Internshala with debugging
-def fetch_internshala_jobs(cookies):
+def fetch_internshala_jobs(cookies,limit=5):
     url = "https://internshala.com/internships"
-    
-    # Send the request with cookies
-    response = requests.get(url, cookies=cookies)
+    driver.get(url)
 
-    # Check if response is valid
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
+    # Add the cookies to the Selenium session
+    for key, value in cookies.items():
+        driver.add_cookie({'name': key, 'value': value})
 
-        # Log the HTML for debugging
-        print("Response HTML:", soup.prettify())  # This will print the raw HTML to the terminal
-        
-        job_listings = []
+    driver.refresh()  # Refresh the page to load with the new cookies
 
-        # Example of how to find job title elements - adjust based on actual HTML structure
-        for job_card in soup.find_all('div', class_='internship_meta'):
-            title_element = job_card.find('a', class_='job-title-href')
-            company_element = job_card.find('p', class_='company-name')
-            location_element = job_card.find('span', class_='location_names')
-            
-            if title_element and company_element and location_element:
+    job_listings = []
+    try:
+        # Wait until the job cards are loaded
+        wait = WebDriverWait(driver, 10)
+        job_cards = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'internship_meta')))
+        print("Job cards found!")
+        for index, job_card in enumerate(job_cards):
+            if index >= limit:
+                break
+            try:
+                # Fetch details
+                title_element = job_card.find_element(By.CLASS_NAME, 'job-title-href')
                 title = title_element.text.strip()
-                company = company_element.text.strip()
-                location = location_element.text.strip()
-                job_listings.append(f"{title} at {company}, {location}")
-        
-        return job_listings
-    else:
-        print(f"Failed to fetch jobs. Status code: {response.status_code}")
-        return []
+                print("Job Title found")
 
-# Step 4: Send job listings to the user
-def send_internshala_job_listings(message):
-    job_listings = fetch_internshala_jobs(cookies_dict)
+                company_element = job_card.find_element(By.CLASS_NAME, 'company-name')
+                company = company_element.text.strip()
+                print("Company found")
+
+                # stipend_element = job_card.find_element(By.CLASS_NAME, 'desktop')
+                # stipend = stipend_element.text.strip()
+                
+
+                # experience_element = job_card.find_element(By.CSS_SELECTOR, 'div.detail-row-1 > div:nth-child(2) > span')
+                # experience = experience_element.text.strip()
+
+                # location_element = job_card.find_element(By.CSS_SELECTOR, 'div.detail-row-1 > p > span > a')
+                # location = location_element.text.strip()
+
+                job_info = {
+                    "title": title,
+                    "company": company,
+                    # "stipend":stipend,
+                    # "experience":experience,
+                    # "location":location
+                }
+
+                job_listings.append(job_info)
+
+            except Exception as e:
+                print(f"Error fetching details for job card: {str(e)}")
+    except Exception as e:
+        print(f"Error fetching job cards: {str(e)}")
+
+    return job_listings
+
+def send_internshala_job_listings(message, cookies_dict):
+    limit=5
+    job_listings = fetch_internshala_jobs(cookies_dict,limit)
     
     if job_listings:
         for job in job_listings:
-            bot.reply_to(message, job)
+            bot.reply_to(message, str(job))
     else:
         bot.reply_to(message, "No jobs found. Please check your cookies or try again later.")
 
-# Start the bot polling to receive messages
 bot.polling()
+
+# Driver.quit() is handled outside polling loop
+driver.quit()
