@@ -20,13 +20,14 @@ driver = webdriver.Safari(service=service)
 # Function to parse cookies from the user's input
 def parse_cookies(cookie_str):
     cookies = {}
-    try:
-        pairs = cookie_str.split(';')
-        for pair in pairs:
-            key, value = pair.strip().split('=')
-            cookies[key] = value
-    except Exception:
-        raise ValueError("Invalid cookie format. Please provide cookies in the format: PHPSESSID=value; sessionToken=value;")
+    for pair in cookie_str.split(';'):
+        pair = pair.strip()
+        if not pair:
+            continue
+        if '=' not in pair:
+            raise ValueError("Invalid cookie format. Use: name=value; name2=value2;")
+        key, value = pair.split('=', 1)
+        cookies[key] = value
     return cookies
 
 @bot.message_handler(commands=['start'])
