@@ -6,7 +6,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import telebot
 import os
 
-TOKEN = '7574930334:AAFwl7p2VRwXy0B0Sb3vCElQ8v3X4cm6slo'.strip()
+TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 bot = telebot.TeleBot(TOKEN)
 cookies_dict = {}  # Global variable to store cookies
